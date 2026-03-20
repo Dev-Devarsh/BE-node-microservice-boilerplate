@@ -1,0 +1,71 @@
+---
+description: Step-by-step checklist for implementing a new feature module
+alwaysApply: true
+---
+
+# New Module / Feature Checklist
+
+When asked to implement a new feature (e.g., "add Products", "add Orders"), follow this exact sequence:
+
+## 1. Model (`src/modules/<name>/model/`)
+- [ ] TypeScript interface `I<Name>` — single source of truth for the domain entity
+- [ ] `I<Name>Document` extending `I<Name>, Document`
+- [ ] `I<Name>Model` extending `Model<I<Name>Document>` with any static methods
+- [ ] Mongoose schema with strict types, validators, `timestamps: true`
+- [ ] `toJSON` transform that strips `__v` (and `password` if auth-related)
+- [ ] Define indexes via `schema.index()` matching the Query Store query shapes
+
+## 2. Query Store (`src/modules/<name>/queries/`)
+- [ ] `SAFE_<NAME>_PROJECTION` — e.g., `{ __v: 0 }`
+- [ ] `DEFAULT_<NAME>_SORT` — e.g., `{ createdAt: -1 }`
+- [ ] `build*Filter()` functions for every filter shape
+- [ ] `build*Pipeline()` functions for every aggregation
+- [ ] Comment which index each query/pipeline stage uses
+
+## 3. Repository (`src/modules/<name>/repository/`)
+- [ ] Import from query store — NEVER define queries inline
+- [ ] `.lean()` on ALL read operations
+- [ ] `Promise.all()` for paginated queries (data + count in parallel)
+- [ ] Aggregation executor methods that call query store pipeline builders
+
+## 4. Validation (`src/modules/<name>/validation/`)
+- [ ] Zod schema for each request payload (create, update)
+- [ ] Export inferred types: `type CreateDto = z.infer<typeof createSchema>`
+- [ ] Reuse `paginationSchema` from `modules/user/validation/` if listing is needed
+
+## 5. Service (`src/modules/<name>/service/`)
+- [ ] Constructor takes Repository via dependency injection
+- [ ] Cache-aside: `cacheService.get()` → fallback to repo → `cacheService.set()` with TTL
+- [ ] Invalidate cache on writes (`cacheService.invalidate()` / `.invalidatePattern()`)
+- [ ] Throw `AppError` subclasses for domain errors (`NotFoundError`, `ConflictError`, etc.)
+- [ ] Zero HTTP/Express awareness — no `req`, `res`, status codes
+
+## 6. Controller (`src/modules/<name>/controller/`)
+- [ ] Constructor takes Service
+- [ ] Extract params from `req.params['id']`, `req.query['field']`, `req.body`
+- [ ] Null-check params: `if (id == null || Array.isArray(id)) throw new BadRequestError()`
+- [ ] Use `ResponseHelper.success()` / `.created()` / `.noContent()` — never `res.json()`
+
+## 7. Routes (`src/modules/<name>/routes/`)
+- [ ] Wire: `new Repository() → new Service(repo) → new Controller(svc)`
+- [ ] Static paths BEFORE parameterized paths (`/analytics/...` before `/:id`)
+- [ ] Protected routes: `asyncHandler(authenticate)` (authenticate is async)
+- [ ] Validated routes: `validate(zodSchema)` before the controller call
+- [ ] All controller calls: `asyncHandler((req, res) => ctrl.method(req, res))`
+- [ ] Register in `src/app.ts`: `app.use('/api/v1/<name>', routes)`
+
+## 8. Migration (`src/migrations/`)
+- [ ] File: `YYYYMMDDHHMMSS_description.ts`
+- [ ] `export default` an `IMigration` object with `description`, `up(db)`, `down(db)`
+- [ ] Use raw `mongodb.Db` — NOT Mongoose
+- [ ] Idempotent `up()` and `down()`
+- [ ] Import type from `'../infrastructure/migration/index.js'`
+
+## 9. Swagger (`docs/swagger.json`)
+- [ ] Add paths for every new endpoint
+- [ ] Add schemas to `components.schemas` for new request/response shapes
+- [ ] Add `"security": [{ "BearerAuth": [] }]` on protected endpoints
+- [ ] Include realistic `example` values
+
+## 10. Barrel exports
+- [ ] `index.ts` in every new directory

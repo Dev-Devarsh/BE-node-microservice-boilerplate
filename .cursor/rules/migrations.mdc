@@ -1,0 +1,40 @@
+---
+description: Database migration conventions
+globs: "**/migrations/*.ts,**/migration/*.ts"
+alwaysApply: false
+---
+
+# Database Migrations
+
+Migration system at `src/infrastructure/migration/`. Migration files at `src/migrations/`.
+
+## Creating a new migration
+
+File: `src/migrations/YYYYMMDDHHMMSS_description.ts`
+
+```typescript
+import type { Db } from 'mongodb';
+import type { IMigration } from '../infrastructure/migration/index.js';
+
+const migration: IMigration = {
+  description: 'Human-readable description',
+  async up(db: Db): Promise<void> { /* apply changes */ },
+  async down(db: Db): Promise<void> { /* revert changes */ },
+};
+export default migration;
+```
+
+## Rules
+
+- Use raw `mongodb.Db` (from `'mongodb'` package), NOT Mongoose
+- Both `up()` and `down()` MUST be idempotent (safe to run twice)
+- Use `createIndex()` (no-op if exists) — never assume index absence
+- Use `.catch(() => { /* index may not exist */ })` on `dropIndex` / `dropCollection` in `down()`
+- Every new collection or index MUST have a migration
+- Run `npm run migrate:up` before `npm start` in production/CI
+
+## CLI commands
+
+- `npm run migrate:up` — apply all pending (runs `tsx src/infrastructure/migration/migrate.cli.ts up`)
+- `npm run migrate:down` — revert last applied
+- `npm run migrate:status` — show applied vs pending

@@ -1,0 +1,59 @@
+---
+description: TypeScript coding conventions and strict mode rules
+globs: "**/*.ts"
+alwaysApply: false
+---
+
+# TypeScript Conventions
+
+## Strict Mode
+
+`tsconfig.json` enables `strict`, `exactOptionalPropertyTypes`, `noUncheckedIndexedAccess`. Respect them:
+
+```typescript
+// ❌ BAD — noUncheckedIndexedAccess: bracket access returns T | undefined
+const id = req.params['id']; // string | undefined
+const user = await service.getUser(id); // TS error: string | undefined ≠ string
+
+// ✅ GOOD — null-check before use
+const id = req.params['id'];
+if (id == null || Array.isArray(id)) throw new BadRequestError('ID required');
+const user = await service.getUser(id); // id is now narrowed to string
+```
+
+```typescript
+// ❌ BAD — exactOptionalPropertyTypes: optional props cannot receive `undefined` implicitly
+const data: { firstName?: string } = { firstName: someValue }; // error if someValue can be undefined
+
+// ✅ GOOD — only assign if the value is actually defined
+const data: { firstName?: string } = {};
+if (someValue !== undefined) data.firstName = someValue;
+```
+
+## Naming
+
+- Interfaces: prefix with `I` → `IUser`, `IJwtPayload`, `IUserDocument`, `IUserModel`
+- DTO types: PascalCase with `Dto` suffix → `RegisterUserDto`, `UpdateUserDto`
+- Files: kebab-case → `user.service.ts`, `auth.middleware.ts`, `cache.service.ts`
+- Every directory gets a barrel `index.ts`
+
+## Imports
+
+- Always use `.js` extension: `import { env } from '../../config/index.js'`
+- Import order: `node:` builtins → external packages → internal (`@/`, `../`, `./`)
+- Use `import type` for type-only imports
+
+## Errors
+
+- Always throw `AppError` subclasses, never raw `Error`
+- Hierarchy in `src/shared/errors/app-error.ts`: `BadRequestError` (400), `UnauthorizedError` (401), `ForbiddenError` (403), `NotFoundError` (404), `ConflictError` (409), `ValidationError` (422), `TooManyRequestsError` (429)
+
+## Responses
+
+- Always use `ResponseHelper.success()` / `.error()` / `.created()` / `.noContent()`
+- Never call `res.json()` or `res.send()` directly in controllers
+
+## Async Handlers
+
+- The `authenticate` middleware is async — always wrap it: `asyncHandler(authenticate)`
+- All controller methods are async — always wrap them: `asyncHandler((req, res) => ctrl.method(req, res))`

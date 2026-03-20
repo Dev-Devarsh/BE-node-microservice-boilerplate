@@ -1,0 +1,58 @@
+---
+description: Core architecture rules and DDD conventions for the microservice
+alwaysApply: true
+---
+
+# Architecture — DDD / Clean Architecture
+
+Node.js + Express + TypeScript microservice with strict DDD layering.
+
+## Data Flow (NEVER violate this)
+
+```
+Route → Zod Validation Middleware → Controller → Service → Repository → Query Store → MongoDB
+                                                    ↕                                    
+                                               CacheService → Redis
+```
+
+## Layer Rules
+
+| Layer | CAN import | CANNOT import |
+|---|---|---|
+| Routes (composition root) | Controllers, Middleware, asyncHandler, **Repository, Service** (for wiring only) | Models, Query Store, Redis |
+| Controllers | Services, ResponseHelper, AppErrors | Repos, Models, Mongoose, Redis, Query Store |
+| Services | Repositories, CacheService, AppErrors, logger | Controllers, Express, req/res |
+| Repositories | Query Store, Mongoose Models | Services, Controllers, Redis |
+| Query Store | Mongoose types (`FilterQuery`, `PipelineStage`) only | Everything else |
+| Infrastructure (redis/, database/, websocket/) | Config, logger | Domain modules (modules/) |
+
+**Key:** Routes wire the dependency chain (`new Repository() → new Service(repo) → new Controller(svc)`) but NEVER call repo/service methods directly.
+
+## When adding a new feature / module:
+
+1. Create folder: `src/modules/<name>/{ model, queries, repository, service, controller, routes, validation }`
+2. Define the **Mongoose model** + TypeScript interface in `model/`
+3. Define ALL queries in `queries/<name>.queries.ts` — never inline queries in repository
+4. Build the **Repository** that imports from the query store and executes via Mongoose
+5. Build the **Service** with business logic + Redis cache-aside pattern
+6. Build the **Controller** that only translates HTTP ↔ Service
+7. Define **Zod schemas** in `validation/` for request payloads
+8. Wire it all in `routes/` (composition root) and register in `app.ts` under `/api/v1/<name>`
+9. Create a **migration** in `src/migrations/` for any new indexes or collections
+10. Update **`docs/swagger.json`** with the new endpoints, schemas, and examples
+11. Add barrel `index.ts` in every new directory
+
+## Key file locations
+
+| Concern | Path |
+|---|---|
+| Env config (Zod-validated) | `src/config/env.ts` |
+| Error hierarchy | `src/shared/errors/app-error.ts` |
+| Auth middleware (JWT + Redis blacklist) | `src/shared/middleware/auth.middleware.ts` |
+| Validation middleware factory | `src/shared/middleware/validate.middleware.ts` |
+| Response envelope helper | `src/shared/utils/response.helper.ts` |
+| Async error catcher | `src/shared/utils/async-handler.ts` |
+| Redis cache service | `src/infrastructure/redis/cache.service.ts` |
+| Token blacklist | `src/infrastructure/redis/token-blacklist.service.ts` |
+| Migration runner | `src/infrastructure/migration/migration.runner.ts` |
+| Swagger spec | `docs/swagger.json` |

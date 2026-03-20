@@ -1,0 +1,790 @@
+{
+	"openapi": "3.0.3",
+	"info": {
+		"title": "Enterprise Node.js Microservice API",
+		"description": "Production-ready REST API with DDD architecture, JWT authentication, Redis caching, and MongoDB.\n\n## Authentication\nAll protected endpoints require a Bearer token in the `Authorization` header.\n\n```\nAuthorization: Bearer <access_token>\n```\n\nObtain tokens via `POST /api/v1/auth/register` or `POST /api/v1/auth/login`.\n\n## Response Envelope\nEvery response follows:\n```json\n{\n  \"success\": boolean,\n  \"data\": T | null,\n  \"error\": { \"code\": string, \"message\": string, \"details\"?: [] } | null,\n  \"meta\": { \"page\", \"limit\", \"totalDocs\", \"totalPages\", \"hasNextPage\", \"hasPrevPage\" } | null\n}\n```",
+		"version": "1.0.0",
+		"contact": {
+			"name": "API Support"
+		},
+		"license": {
+			"name": "MIT"
+		}
+	},
+	"servers": [
+		{
+			"url": "http://localhost:3000",
+			"description": "Local development"
+		}
+	],
+	"tags": [
+		{
+			"name": "Health",
+			"description": "Service health monitoring"
+		},
+		{
+			"name": "Auth",
+			"description": "Registration, login, logout, token management"
+		},
+		{
+			"name": "Users",
+			"description": "User CRUD operations (protected)"
+		},
+		{
+			"name": "Analytics",
+			"description": "User analytics and reporting (protected)"
+		}
+	],
+	"paths": {
+		"/health": {
+			"get": {
+				"tags": ["Health"],
+				"summary": "Service health check",
+				"description": "Returns server uptime, status, and current timestamp. No authentication required.",
+				"operationId": "getHealth",
+				"responses": {
+					"200": {
+						"description": "Service is healthy",
+						"content": {
+							"application/json": {
+								"schema": {
+									"allOf": [
+										{ "$ref": "#/components/schemas/ApiResponse" },
+										{
+											"type": "object",
+											"properties": {
+												"data": { "$ref": "#/components/schemas/HealthData" }
+											}
+										}
+									]
+								},
+								"example": {
+									"success": true,
+									"data": {
+										"status": "healthy",
+										"uptime": 12345.678,
+										"timestamp": "2025-03-19T10:30:00.000Z"
+									},
+									"error": null,
+									"meta": null
+								}
+							}
+						}
+					}
+				}
+			}
+		},
+		"/api/v1/auth/register": {
+			"post": {
+				"tags": ["Auth"],
+				"summary": "Register a new user",
+				"description": "Creates a new user account with Argon2id-hashed password and returns JWT access + refresh tokens.\n\n**Password requirements:**\n- Minimum 8 characters, maximum 128\n- At least one uppercase letter\n- At least one lowercase letter\n- At least one digit\n- At least one special character (!@#$%^&*)",
+				"operationId": "registerUser",
+				"requestBody": {
+					"required": true,
+					"content": {
+						"application/json": {
+							"schema": { "$ref": "#/components/schemas/RegisterRequest" },
+							"example": {
+								"email": "john.doe@example.com",
+								"password": "SecureP@ss1",
+								"firstName": "John",
+								"lastName": "Doe"
+							}
+						}
+					}
+				},
+				"responses": {
+					"201": {
+						"description": "User created successfully",
+						"content": {
+							"application/json": {
+								"schema": {
+									"allOf": [
+										{ "$ref": "#/components/schemas/ApiResponse" },
+										{
+											"type": "object",
+											"properties": {
+												"data": { "$ref": "#/components/schemas/AuthResult" }
+											}
+										}
+									]
+								},
+								"example": {
+									"success": true,
+									"data": {
+										"user": {
+											"_id": "507f1f77bcf86cd799439011",
+											"email": "john.doe@example.com",
+											"firstName": "John",
+											"lastName": "Doe",
+											"role": "user",
+											"isActive": true,
+											"lastLoginAt": null,
+											"createdAt": "2025-03-19T10:30:00.000Z",
+											"updatedAt": "2025-03-19T10:30:00.000Z"
+										},
+										"tokens": {
+											"accessToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+											"refreshToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+										}
+									},
+									"error": null,
+									"meta": null
+								}
+							}
+						}
+					},
+					"409": {
+						"description": "Email already exists",
+						"content": {
+							"application/json": {
+								"schema": { "$ref": "#/components/schemas/ErrorResponse" },
+								"example": {
+									"success": false,
+									"data": null,
+									"error": {
+										"code": "CONFLICT",
+										"message": "An account with this email already exists"
+									},
+									"meta": null
+								}
+							}
+						}
+					},
+					"422": { "$ref": "#/components/responses/ValidationError" },
+					"429": { "$ref": "#/components/responses/RateLimitError" }
+				}
+			}
+		},
+		"/api/v1/auth/login": {
+			"post": {
+				"tags": ["Auth"],
+				"summary": "Login with email and password",
+				"description": "Authenticates a user and returns JWT access + refresh tokens. Updates `lastLoginAt` timestamp.\n\n**Security:** Returns a generic error message for both invalid email and invalid password to prevent user enumeration.",
+				"operationId": "loginUser",
+				"requestBody": {
+					"required": true,
+					"content": {
+						"application/json": {
+							"schema": { "$ref": "#/components/schemas/LoginRequest" },
+							"example": {
+								"email": "john.doe@example.com",
+								"password": "SecureP@ss1"
+							}
+						}
+					}
+				},
+				"responses": {
+					"200": {
+						"description": "Login successful",
+						"content": {
+							"application/json": {
+								"schema": {
+									"allOf": [
+										{ "$ref": "#/components/schemas/ApiResponse" },
+										{
+											"type": "object",
+											"properties": {
+												"data": { "$ref": "#/components/schemas/AuthResult" }
+											}
+										}
+									]
+								},
+								"example": {
+									"success": true,
+									"data": {
+										"user": {
+											"_id": "507f1f77bcf86cd799439011",
+											"email": "john.doe@example.com",
+											"firstName": "John",
+											"lastName": "Doe",
+											"role": "user",
+											"isActive": true,
+											"lastLoginAt": "2025-03-19T10:35:00.000Z",
+											"createdAt": "2025-03-19T10:30:00.000Z",
+											"updatedAt": "2025-03-19T10:35:00.000Z"
+										},
+										"tokens": {
+											"accessToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+											"refreshToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+										}
+									},
+									"error": null,
+									"meta": null
+								}
+							}
+						}
+					},
+					"401": {
+						"description": "Invalid credentials",
+						"content": {
+							"application/json": {
+								"schema": { "$ref": "#/components/schemas/ErrorResponse" },
+								"example": {
+									"success": false,
+									"data": null,
+									"error": {
+										"code": "UNAUTHORIZED",
+										"message": "Invalid email or password"
+									},
+									"meta": null
+								}
+							}
+						}
+					},
+					"422": { "$ref": "#/components/responses/ValidationError" },
+					"429": { "$ref": "#/components/responses/RateLimitError" }
+				}
+			}
+		},
+		"/api/v1/auth/logout": {
+			"post": {
+				"tags": ["Auth"],
+				"summary": "Logout (blacklist current token)",
+				"description": "Adds the current access token to the Redis blacklist. The token becomes unusable immediately. TTL on the blacklist entry matches the token's remaining lifetime — Redis auto-cleans it after expiry.",
+				"operationId": "logoutUser",
+				"security": [{ "BearerAuth": [] }],
+				"responses": {
+					"200": {
+						"description": "Token blacklisted successfully",
+						"content": {
+							"application/json": {
+								"schema": { "$ref": "#/components/schemas/ApiResponse" },
+								"example": {
+									"success": true,
+									"data": { "message": "Logged out successfully" },
+									"error": null,
+									"meta": null
+								}
+							}
+						}
+					},
+					"401": { "$ref": "#/components/responses/UnauthorizedError" }
+				}
+			}
+		},
+		"/api/v1/users": {
+			"get": {
+				"tags": ["Users"],
+				"summary": "List users (paginated)",
+				"description": "Returns a paginated list of active users. Supports optional role filtering. Results are cached in Redis for 1 minute.",
+				"operationId": "getUsers",
+				"security": [{ "BearerAuth": [] }],
+				"parameters": [
+					{
+						"name": "page",
+						"in": "query",
+						"description": "Page number (1-indexed)",
+						"schema": { "type": "integer", "minimum": 1, "default": 1 }
+					},
+					{
+						"name": "limit",
+						"in": "query",
+						"description": "Results per page (max 100)",
+						"schema": { "type": "integer", "minimum": 1, "maximum": 100, "default": 20 }
+					},
+					{
+						"name": "role",
+						"in": "query",
+						"description": "Filter by user role",
+						"schema": { "type": "string", "enum": ["user", "admin"] }
+					}
+				],
+				"responses": {
+					"200": {
+						"description": "Paginated user list",
+						"content": {
+							"application/json": {
+								"schema": {
+									"allOf": [
+										{ "$ref": "#/components/schemas/ApiResponse" },
+										{
+											"type": "object",
+											"properties": {
+												"data": {
+													"type": "array",
+													"items": { "$ref": "#/components/schemas/User" }
+												},
+												"meta": { "$ref": "#/components/schemas/PaginationMeta" }
+											}
+										}
+									]
+								},
+								"example": {
+									"success": true,
+									"data": [
+										{
+											"_id": "507f1f77bcf86cd799439011",
+											"email": "john@example.com",
+											"firstName": "John",
+											"lastName": "Doe",
+											"role": "user",
+											"isActive": true,
+											"lastLoginAt": "2025-03-19T10:35:00.000Z",
+											"createdAt": "2025-03-19T10:30:00.000Z",
+											"updatedAt": "2025-03-19T10:35:00.000Z"
+										}
+									],
+									"error": null,
+									"meta": {
+										"page": 1,
+										"limit": 20,
+										"totalDocs": 1,
+										"totalPages": 1,
+										"hasNextPage": false,
+										"hasPrevPage": false
+									}
+								}
+							}
+						}
+					},
+					"401": { "$ref": "#/components/responses/UnauthorizedError" }
+				}
+			}
+		},
+		"/api/v1/users/{id}": {
+			"get": {
+				"tags": ["Users"],
+				"summary": "Get user by ID",
+				"description": "Returns a single user by MongoDB ObjectId. Cached in Redis for 5 minutes.",
+				"operationId": "getUserById",
+				"security": [{ "BearerAuth": [] }],
+				"parameters": [
+					{ "$ref": "#/components/parameters/UserId" }
+				],
+				"responses": {
+					"200": {
+						"description": "User found",
+						"content": {
+							"application/json": {
+								"schema": {
+									"allOf": [
+										{ "$ref": "#/components/schemas/ApiResponse" },
+										{
+											"type": "object",
+											"properties": {
+												"data": { "$ref": "#/components/schemas/User" }
+											}
+										}
+									]
+								}
+							}
+						}
+					},
+					"401": { "$ref": "#/components/responses/UnauthorizedError" },
+					"404": { "$ref": "#/components/responses/NotFoundError" }
+				}
+			},
+			"patch": {
+				"tags": ["Users"],
+				"summary": "Update user profile",
+				"description": "Update user's `firstName` and/or `lastName`. Both fields are optional. Invalidates the Redis cache for this user.",
+				"operationId": "updateUser",
+				"security": [{ "BearerAuth": [] }],
+				"parameters": [
+					{ "$ref": "#/components/parameters/UserId" }
+				],
+				"requestBody": {
+					"required": true,
+					"content": {
+						"application/json": {
+							"schema": { "$ref": "#/components/schemas/UpdateUserRequest" },
+							"example": {
+								"firstName": "Jonathan",
+								"lastName": "Doe-Smith"
+							}
+						}
+					}
+				},
+				"responses": {
+					"200": {
+						"description": "User updated",
+						"content": {
+							"application/json": {
+								"schema": {
+									"allOf": [
+										{ "$ref": "#/components/schemas/ApiResponse" },
+										{
+											"type": "object",
+											"properties": {
+												"data": { "$ref": "#/components/schemas/User" }
+											}
+										}
+									]
+								}
+							}
+						}
+					},
+					"401": { "$ref": "#/components/responses/UnauthorizedError" },
+					"404": { "$ref": "#/components/responses/NotFoundError" },
+					"422": { "$ref": "#/components/responses/ValidationError" }
+				}
+			},
+			"delete": {
+				"tags": ["Users"],
+				"summary": "Deactivate user (soft-delete)",
+				"description": "Soft-deletes the user by setting `isActive: false`. The partial unique index on email releases the email for re-registration.\n\n**Authorization:** Users can only deactivate their own account (`req.user.sub` must match `:id`).",
+				"operationId": "deleteUser",
+				"security": [{ "BearerAuth": [] }],
+				"parameters": [
+					{ "$ref": "#/components/parameters/UserId" }
+				],
+				"responses": {
+					"204": {
+						"description": "User deactivated (no content)"
+					},
+					"401": { "$ref": "#/components/responses/UnauthorizedError" },
+					"404": { "$ref": "#/components/responses/NotFoundError" }
+				}
+			}
+		},
+		"/api/v1/users/analytics/retention": {
+			"get": {
+				"tags": ["Analytics"],
+				"summary": "Monthly retention statistics",
+				"description": "Executes a MongoDB aggregation pipeline with `$lookup` to the `sessions` collection. Returns per-month MAU, new registrations, users with sessions, and retention rate.\n\nCached in Redis for 15 minutes.",
+				"operationId": "getRetentionStats",
+				"security": [{ "BearerAuth": [] }],
+				"parameters": [
+					{ "$ref": "#/components/parameters/StartDate" },
+					{ "$ref": "#/components/parameters/EndDate" }
+				],
+				"responses": {
+					"200": {
+						"description": "Retention statistics",
+						"content": {
+							"application/json": {
+								"schema": { "$ref": "#/components/schemas/ApiResponse" },
+								"example": {
+									"success": true,
+									"data": [
+										{
+											"year": 2025,
+											"monthNum": 1,
+											"month": "Jan",
+											"totalActiveUsers": 120,
+											"newRegistrations": 30,
+											"usersWithSessions": 85,
+											"retentionRate": 70.83
+										},
+										{
+											"year": 2025,
+											"monthNum": 2,
+											"month": "Feb",
+											"totalActiveUsers": 135,
+											"newRegistrations": 25,
+											"usersWithSessions": 100,
+											"retentionRate": 74.07
+										}
+									],
+									"error": null,
+									"meta": null
+								}
+							}
+						}
+					},
+					"400": { "$ref": "#/components/responses/BadRequestError" },
+					"401": { "$ref": "#/components/responses/UnauthorizedError" }
+				}
+			}
+		},
+		"/api/v1/users/analytics/roles": {
+			"get": {
+				"tags": ["Analytics"],
+				"summary": "User count by role",
+				"description": "Aggregation pipeline that groups active users by role and counts them. Cached in Redis for 15 minutes.",
+				"operationId": "getRoleDistribution",
+				"security": [{ "BearerAuth": [] }],
+				"responses": {
+					"200": {
+						"description": "Role distribution",
+						"content": {
+							"application/json": {
+								"schema": { "$ref": "#/components/schemas/ApiResponse" },
+								"example": {
+									"success": true,
+									"data": [
+										{ "role": "user", "count": 150 },
+										{ "role": "admin", "count": 5 }
+									],
+									"error": null,
+									"meta": null
+								}
+							}
+						}
+					},
+					"401": { "$ref": "#/components/responses/UnauthorizedError" }
+				}
+			}
+		},
+		"/api/v1/users/analytics/trends": {
+			"get": {
+				"tags": ["Analytics"],
+				"summary": "Registration trends",
+				"description": "Registration counts over time with configurable granularity. Returns registrations, active registrations, and churned registrations per time bucket.\n\nCached in Redis for 15 minutes.",
+				"operationId": "getRegistrationTrends",
+				"security": [{ "BearerAuth": [] }],
+				"parameters": [
+					{ "$ref": "#/components/parameters/StartDate" },
+					{ "$ref": "#/components/parameters/EndDate" },
+					{
+						"name": "granularity",
+						"in": "query",
+						"description": "Time bucket size",
+						"schema": { "type": "string", "enum": ["day", "week", "month"], "default": "month" }
+					}
+				],
+				"responses": {
+					"200": {
+						"description": "Registration trend data",
+						"content": {
+							"application/json": {
+								"schema": { "$ref": "#/components/schemas/ApiResponse" },
+								"example": {
+									"success": true,
+									"data": [
+										{
+											"period": { "year": 2025, "month": 1 },
+											"registrations": 50,
+											"activeRegistrations": 45,
+											"churnedRegistrations": 5
+										}
+									],
+									"error": null,
+									"meta": null
+								}
+							}
+						}
+					},
+					"400": { "$ref": "#/components/responses/BadRequestError" },
+					"401": { "$ref": "#/components/responses/UnauthorizedError" }
+				}
+			}
+		}
+	},
+	"components": {
+		"securitySchemes": {
+			"BearerAuth": {
+				"type": "http",
+				"scheme": "bearer",
+				"bearerFormat": "JWT",
+				"description": "JWT access token obtained from `/api/v1/auth/login` or `/api/v1/auth/register`"
+			}
+		},
+		"parameters": {
+			"UserId": {
+				"name": "id",
+				"in": "path",
+				"required": true,
+				"description": "MongoDB ObjectId (24-character hex string)",
+				"schema": { "type": "string", "pattern": "^[a-fA-F0-9]{24}$", "example": "507f1f77bcf86cd799439011" }
+			},
+			"StartDate": {
+				"name": "startDate",
+				"in": "query",
+				"required": true,
+				"description": "Analysis window start (ISO 8601)",
+				"schema": { "type": "string", "format": "date", "example": "2025-01-01" }
+			},
+			"EndDate": {
+				"name": "endDate",
+				"in": "query",
+				"required": true,
+				"description": "Analysis window end (ISO 8601)",
+				"schema": { "type": "string", "format": "date", "example": "2025-12-31" }
+			}
+		},
+		"schemas": {
+			"ApiResponse": {
+				"type": "object",
+				"properties": {
+					"success": { "type": "boolean" },
+					"data": { "nullable": true },
+					"error": { "nullable": true, "$ref": "#/components/schemas/ErrorDetail" },
+					"meta": { "nullable": true, "$ref": "#/components/schemas/PaginationMeta" }
+				},
+				"required": ["success", "data", "error", "meta"]
+			},
+			"ErrorDetail": {
+				"type": "object",
+				"properties": {
+					"code": { "type": "string", "example": "VALIDATION_ERROR" },
+					"message": { "type": "string", "example": "Validation failed" },
+					"details": {
+						"type": "array",
+						"items": {
+							"type": "object",
+							"properties": {
+								"field": { "type": "string", "example": "email" },
+								"message": { "type": "string", "example": "Invalid email format" }
+							}
+						}
+					}
+				},
+				"required": ["code", "message"]
+			},
+			"ErrorResponse": {
+				"type": "object",
+				"properties": {
+					"success": { "type": "boolean", "example": false },
+					"data": { "type": "null", "example": null },
+					"error": { "$ref": "#/components/schemas/ErrorDetail" },
+					"meta": { "type": "null", "example": null }
+				}
+			},
+			"PaginationMeta": {
+				"type": "object",
+				"properties": {
+					"page": { "type": "integer", "example": 1 },
+					"limit": { "type": "integer", "example": 20 },
+					"totalDocs": { "type": "integer", "example": 150 },
+					"totalPages": { "type": "integer", "example": 8 },
+					"hasNextPage": { "type": "boolean", "example": true },
+					"hasPrevPage": { "type": "boolean", "example": false }
+				}
+			},
+			"HealthData": {
+				"type": "object",
+				"properties": {
+					"status": { "type": "string", "example": "healthy" },
+					"uptime": { "type": "number", "example": 12345.678 },
+					"timestamp": { "type": "string", "format": "date-time" }
+				}
+			},
+			"User": {
+				"type": "object",
+				"properties": {
+					"_id": { "type": "string", "example": "507f1f77bcf86cd799439011" },
+					"email": { "type": "string", "format": "email", "example": "john@example.com" },
+					"firstName": { "type": "string", "example": "John" },
+					"lastName": { "type": "string", "example": "Doe" },
+					"role": { "type": "string", "enum": ["user", "admin"], "example": "user" },
+					"isActive": { "type": "boolean", "example": true },
+					"lastLoginAt": { "type": "string", "format": "date-time", "nullable": true },
+					"createdAt": { "type": "string", "format": "date-time" },
+					"updatedAt": { "type": "string", "format": "date-time" }
+				}
+			},
+			"AuthResult": {
+				"type": "object",
+				"properties": {
+					"user": { "$ref": "#/components/schemas/User" },
+					"tokens": { "$ref": "#/components/schemas/TokenPair" }
+				}
+			},
+			"TokenPair": {
+				"type": "object",
+				"properties": {
+					"accessToken": { "type": "string", "example": "eyJhbGciOiJIUzI1NiIs..." },
+					"refreshToken": { "type": "string", "example": "eyJhbGciOiJIUzI1NiIs..." }
+				}
+			},
+			"RegisterRequest": {
+				"type": "object",
+				"required": ["email", "password", "firstName", "lastName"],
+				"properties": {
+					"email": { "type": "string", "format": "email", "maxLength": 255, "example": "john.doe@example.com" },
+					"password": { "type": "string", "minLength": 8, "maxLength": 128, "example": "SecureP@ss1", "description": "Must contain uppercase, lowercase, digit, and special character" },
+					"firstName": { "type": "string", "minLength": 1, "maxLength": 100, "example": "John" },
+					"lastName": { "type": "string", "minLength": 1, "maxLength": 100, "example": "Doe" }
+				}
+			},
+			"LoginRequest": {
+				"type": "object",
+				"required": ["email", "password"],
+				"properties": {
+					"email": { "type": "string", "format": "email", "example": "john.doe@example.com" },
+					"password": { "type": "string", "minLength": 1, "example": "SecureP@ss1" }
+				}
+			},
+			"UpdateUserRequest": {
+				"type": "object",
+				"properties": {
+					"firstName": { "type": "string", "minLength": 1, "maxLength": 100, "example": "Jonathan" },
+					"lastName": { "type": "string", "minLength": 1, "maxLength": 100, "example": "Doe-Smith" }
+				},
+				"description": "Both fields are optional. Send only the fields you want to change."
+			}
+		},
+		"responses": {
+			"UnauthorizedError": {
+				"description": "Missing, invalid, or revoked token",
+				"content": {
+					"application/json": {
+						"schema": { "$ref": "#/components/schemas/ErrorResponse" },
+						"example": {
+							"success": false,
+							"data": null,
+							"error": { "code": "UNAUTHORIZED", "message": "Invalid or expired token" },
+							"meta": null
+						}
+					}
+				}
+			},
+			"NotFoundError": {
+				"description": "Resource not found",
+				"content": {
+					"application/json": {
+						"schema": { "$ref": "#/components/schemas/ErrorResponse" },
+						"example": {
+							"success": false,
+							"data": null,
+							"error": { "code": "NOT_FOUND", "message": "User not found" },
+							"meta": null
+						}
+					}
+				}
+			},
+			"BadRequestError": {
+				"description": "Malformed request",
+				"content": {
+					"application/json": {
+						"schema": { "$ref": "#/components/schemas/ErrorResponse" },
+						"example": {
+							"success": false,
+							"data": null,
+							"error": { "code": "BAD_REQUEST", "message": "Valid startDate and endDate query params required" },
+							"meta": null
+						}
+					}
+				}
+			},
+			"ValidationError": {
+				"description": "Request payload validation failed",
+				"content": {
+					"application/json": {
+						"schema": { "$ref": "#/components/schemas/ErrorResponse" },
+						"example": {
+							"success": false,
+							"data": null,
+							"error": {
+								"code": "VALIDATION_ERROR",
+								"message": "Validation failed",
+								"details": [
+									{ "field": "email", "message": "Invalid email format" },
+									{ "field": "password", "message": "Password must be at least 8 characters" }
+								]
+							},
+							"meta": null
+						}
+					}
+				}
+			},
+			"RateLimitError": {
+				"description": "Rate limit exceeded (100 req / 15 min per IP)",
+				"content": {
+					"application/json": {
+						"schema": { "$ref": "#/components/schemas/ErrorResponse" },
+						"example": {
+							"success": false,
+							"data": null,
+							"error": { "code": "RATE_LIMIT_EXCEEDED", "message": "Too many requests, please try again later" },
+							"meta": null
+						}
+					}
+				}
+			}
+		}
+	}
+}

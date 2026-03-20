@@ -1,0 +1,33 @@
+---
+description: Keep Swagger/OpenAPI spec in sync when adding or changing API endpoints
+globs: "**/routes/*.ts,**/controller/*.ts,docs/swagger.json"
+alwaysApply: false
+---
+
+# Swagger / API Documentation
+
+OpenAPI 3.0.3 spec at `docs/swagger.json`. Served at `/api-docs` via `swagger-ui-express` in non-production only (`NODE_ENV !== 'production'`). Configured in `src/app.ts`.
+
+## When adding a new endpoint:
+
+1. Add the path + operation to `docs/swagger.json` under `paths`
+2. Add request/response schemas to `components.schemas` if new shapes are needed
+3. Reuse existing `$ref` components — don't duplicate:
+   - `#/components/schemas/ApiResponse` — success envelope
+   - `#/components/schemas/ErrorResponse` — error envelope
+   - `#/components/schemas/PaginationMeta` — pagination metadata
+   - `#/components/responses/UnauthorizedError` — 401
+   - `#/components/responses/ValidationError` — 422
+   - `#/components/responses/NotFoundError` — 404
+   - `#/components/responses/RateLimitError` — 429
+   - `#/components/responses/BadRequestError` — 400
+4. Include realistic `example` values for every request body and response
+5. Document all query params, path params, and possible error codes
+
+## Conventions
+
+- Tags group endpoints by domain: `Health`, `Auth`, `Users`, `Analytics`
+- Protected endpoints: `"security": [{ "BearerAuth": [] }]`
+- Path params use `$ref: "#/components/parameters/UserId"` pattern
+- Date params use `$ref: "#/components/parameters/StartDate"` / `EndDate`
+- Postman: Import → select `docs/swagger.json` → auto-generates full collection

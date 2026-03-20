@@ -1,0 +1,46 @@
+---
+description: Query Store (Stored Procedure) pattern for MongoDB queries
+globs: "**/queries/*.ts,**/repository/*.ts"
+alwaysApply: false
+---
+
+# Query Store Pattern
+
+ALL MongoDB queries, filters, projections, sorts, and aggregation pipelines live in `modules/<domain>/queries/<domain>.queries.ts`.
+
+## What goes in the Query Store
+
+- `SAFE_<NAME>_PROJECTION` — e.g., `{ password: 0, __v: 0 }`
+- `DEFAULT_<NAME>_SORT` — e.g., `{ createdAt: -1 }`
+- `build*Filter(params)` → returns `FilterQuery<IDocument>`
+- `build*Pipeline(params)` → returns `PipelineStage[]`
+
+Reference: `src/modules/user/queries/user.queries.ts`
+
+## What goes in the Repository
+
+- Import query store constants/builders and pass to Mongoose `.find()` / `.aggregate()`
+- The repository is the **executor**, the query store is the **definition**
+
+```typescript
+// ❌ BAD — query defined inline in repository
+async findActive() {
+  return UserModel.find({ isActive: true, role: 'admin' }).lean().exec();
+}
+
+// ✅ GOOD — import from query store, execute in repository
+import { SAFE_USER_PROJECTION, buildUserListFilter } from '../queries/index.js';
+
+async findActive() {
+  const filter = buildUserListFilter({ role: 'admin' });
+  return UserModel.find(filter, SAFE_USER_PROJECTION).lean().exec();
+}
+```
+
+## Aggregation pipelines
+
+- Define as a function returning `PipelineStage[]`
+- `$match` FIRST to leverage indexes
+- `$project` early to drop fields before expensive `$lookup` stages
+- Document which index each `$match` uses
+- In the repository, call the builder and pass to `UserModel.aggregate(pipeline).exec()`

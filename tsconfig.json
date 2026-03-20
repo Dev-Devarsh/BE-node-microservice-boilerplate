@@ -1,0 +1,44 @@
+{
+	"compilerOptions": {
+		/* Language & Environment */
+		"target": "ES2022",
+		"module": "Node16",
+		"moduleResolution": "Node16",
+		"lib": ["ES2022"],
+
+		/* Strict Type-Checking — zero tolerance for implicit any or loose types */
+		"strict": true,
+		"noImplicitAny": true,
+		"exactOptionalPropertyTypes": true,
+		"noUncheckedIndexedAccess": true,
+		"noImplicitReturns": true,
+		"noFallthroughCasesInSwitch": true,
+		"forceConsistentCasingInFileNames": true,
+
+		/* Emit */
+		"declaration": true,
+		"declarationMap": true,
+		"sourceMap": true,
+		"outDir": "dist",
+		"rootDir": "src",
+		"removeComments": false,
+
+		/* Interop */
+		"esModuleInterop": true,
+		"allowSyntheticDefaultImports": true,
+		"isolatedModules": true,
+		"resolveJsonModule": true,
+		"skipLibCheck": true,
+
+		/* Path Aliases — keeps imports clean across domain boundaries */
+		"baseUrl": ".",
+		"paths": {
+			"@/*": ["src/*"],
+			"@config/*": ["src/config/*"],
+			"@shared/*": ["src/shared/*"],
+			"@modules/*": ["src/modules/*"]
+		}
+	},
+	"include": ["src/**/*.ts"],
+	"exclude": ["node_modules", "dist", "**/*.test.ts", "**/*.spec.ts"]
+}

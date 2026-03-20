@@ -1,0 +1,50 @@
+---
+description: Redis caching patterns and token blacklist conventions
+globs: "**/service/*.ts,**/redis/*.ts"
+alwaysApply: false
+---
+
+# Redis & Caching Conventions
+
+Redis client lives at `src/infrastructure/redis/`. Import the singleton `cacheService`:
+
+```typescript
+import { cacheService } from '../../../infrastructure/redis/index.js';
+```
+
+## Cache-Aside pattern (in Services)
+
+```typescript
+async getById(id: string): Promise<IEntity> {
+  const cached = await cacheService.get<IEntity>('namespace', id);
+  if (cached != null) return cached;
+
+  const entity = await this.repository.findById(id);
+  if (entity == null) throw new NotFoundError();
+
+  await cacheService.set('namespace', id, entity, 300); // 5 min TTL
+  return entity;
+}
+```
+
+## Rules
+
+- Every `cacheService.set()` MUST have an explicit TTL — no infinite caching
+- Invalidate on writes: `cacheService.invalidate('namespace', id)`
+- Bulk invalidate: `cacheService.invalidatePattern('namespace')` clears all `namespace:*` keys
+- Redis is optional — all methods return `null`/`false` when Redis is down, code falls through to MongoDB
+- Namespace pattern: `user:123`, `user:list:1:20:all`, `user:analytics:retention:...`
+
+## TTL guidelines
+
+| Data type | TTL | Constant name pattern |
+|---|---|---|
+| Single entity | 5 min (300s) | `CACHE_TTL_SECONDS` |
+| Paginated lists | 1 min (60s) | `CACHE_TTL_LIST_SECONDS` |
+| Analytics/aggregations | 15 min (900s) | `CACHE_TTL_ANALYTICS_SECONDS` |
+
+## Token blacklist (in `infrastructure/redis/token-blacklist.service.ts`)
+
+- `blacklistToken(token)` — on logout, TTL = remaining token lifetime
+- `revokeAllUserTokens(userId)` — on password change, invalidates ALL tokens via `iat` check
+- `isTokenBlacklisted(token)` + `isTokenRevokedForUser(userId, iat)` — checked in `auth.middleware.ts`
